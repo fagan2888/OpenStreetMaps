@@ -61,30 +61,39 @@ d_wrongCitiesNames={  'aruja': u"Arujá",
 u's\xe3o paulo - sp': u"São Paulo",
 u's\xe3o paulo/sp': u"São Paulo", 
  'guaruja': u"Guarujá",
-u'ibi\xfana-sp': u"Ibiúna" 
+u'ibi\xfana-sp': u"Ibiúna" ,
+u'service': None,
+u'alum\xednio': None,
+u'mooca': None
 }
 
 # variables to create docs to Mongo
 CREATED = [ "version", "changeset", "timestamp", "user", "uid"]
 NODE = ["id","visible","amenity","cuisine","name","phone"]
 
-
+#track corrections
+TRACK_STREETS=0
+TRACK_CITIES=0
 
 
 '''
 Begin of Help Functions
 '''
+def aggregate(db, pipeline):
+    '''Return filtered data according to pipeline passed'''        
+    result = db.aggregate(pipeline)  
+    return result['result']
 
 
 def key_type(element, keys):
-	'''
-	Check if there is any problem in the "k" attribute 
-	for each tag from XML. Return a updated dictionary
-	with the count of it.
+    '''
+    Check if there is any problem in the "k" attribute 
+    for each tag from XML. Return a updated dictionary
+    with the count of it.
 
-	element: element from a Element Tree object
-	keys: a dictionary with the previous counting
-	'''	
+    element: element from a Element Tree object
+    keys: a dictionary with the previous counting
+    '''	
     if element.tag == "tag":
         s=element.attrib['k']
         if problemchars.search(s): keys['problemchars']+=1 
@@ -96,11 +105,11 @@ def key_type(element, keys):
     return keys
 
 def get_user(element,users):
-	'''
-	Count the number of unique users on the XML file. 
-	element: element from a Element Tree object
-	users: is a set of users already registered
-	'''	
+    '''
+    Count the number of unique users on the XML file. 
+    element: element from a Element Tree object
+    users: is a set of users already registered
+    '''	
     if element.tag == "node":
         users.add(element.attrib['uid'])
 
@@ -199,11 +208,11 @@ End of Help Functions
 '''
 
 def count_tags(filename):
-	'''
-	Count the number of each tag presented in the XML file 
-	passed. An Open Street Maps XML file is expected.
-	Return a dictionary with the counting of each tag.
-	'''
+    '''
+    Count the number of each tag presented in the XML file 
+    passed. An Open Street Maps XML file is expected.
+    Return a dictionary with the counting of each tag.
+    '''
     d={}
     for event, elem in ET.iterparse(filename):
         if event == 'end':
@@ -216,10 +225,10 @@ def count_tags(filename):
 
 
 def count_tagsIssues(filename):
-	'''
-	Iterate through the file count the number of issues mapped.
-	Return a dictionary with the counting of each issue.
-	'''
+    '''
+    Iterate through the file count the number of issues mapped.
+    Return a dictionary with the counting of each issue.
+    '''
     keys = {"lower": 0, "lower_colon": 0, "problemchars": 0, "other": 0}
     for _, element in ET.iterparse(filename):
         keys = key_type(element, keys)
@@ -232,9 +241,9 @@ def count_tagsIssues(filename):
 
 
 def count_users(filename):
-	'''
-	Return a set of unique users
-	'''
+    '''
+    Return a set of unique users
+    '''
     users = set()
     for _, element in ET.iterparse(filename):
         users= get_user(element,users)
@@ -282,48 +291,60 @@ def betterStreetNames(filename):
     return d_newName
 
 
+
+
+                #     node['address'][s[5:]]=tag.attrib['v']
+                # else:
+                #     node[s]=tag.attrib['v']
+
+
+
 def shape_element(element,d_streetName,d_wrongCitiesNames=d_wrongCitiesNames):
     '''
-
-    Street and City names are required
+    Reshape the element passed to fit into mongodb. Return a dictionary with the
+    data restructured. If it is not possible to correct, return None.
+    element: xml element object
+    d_streetName: a dictionary with corrected streets names
+    d_wrongCitiesNames: a dict with corrected cities names
     '''
     node={}
+    global TRACK_STREETS, TRACK_CITIES
     if element.tag == "node" or element.tag == "way" :
-        if element.tag == 'node':
-            node['type'] = 'node'
-        else:
-            node['type'] = 'way'
-            for tag in element.iter("tag"):
-                #check problemns
-                s = tag.attrib['k']
-                if s.count(":")>1: continue
-                if problemchars.search(s): continue 
-                #set the name to be insert in the dict
-                better_name=tag.attrib['v']                
-                #check k type
-                if s[:5]=='addr:':
-                    #initialize address dict in node dict
-                    if 'address' not in node: node['address']={}
-                    #if is needed, correct better_name
-                    #if it was a city or a street name and there is 
-                    #no valid string for it, return None
-                    if  is_street_name(elem):
-                        if tag.attrib['v'] in  d_streetName:
-                            better_name=d_streetName[better_name]
-                            if not better_name: return None
-                    elif is_city_name(element):
-                        if not better_name: return None
-                        if tag.attrib['v'] in  d_wrongCitiesNames:
-                            better_name=d_wrongCitiesNames[better_name] 
-                    #set the address node                     
-                    node['address'][s[5:]]=better_name
-                else:
-                    node[s]=better_name
-    
-            for tag in element.iter("nd"):
-                if 'node_refs' not in node: node['node_refs']=[]
-                node['node_refs'].append(tag.attrib['ref'])
+        node['type'] = element.tag
+        for tag in element.iter("tag"):
+            #check problemns
+            if 'k' not in tag.attrib: continue
+            s = tag.attrib['k']
+            if s.count(":")>1: continue
+            if problemchars.search(s): continue 
+            #set the name to be insert in the dict
+            better_name=tag.attrib['v'].lower()               
+            #check k refer to address
+            if s[:5]=='addr:':
+                #initialize address dict in node dict
+                if 'address' not in node: node['address']={}
+                if  is_street_name(tag):
+                    #if is needed, correct street name
+                    if better_name in  d_streetName:
+                        better_name=d_streetName[better_name]
+                    if not better_name: continue
+                    else: TRACK_STREETS+=1
+                elif is_city_name(tag):
+                    #if is needed, correct city name
+                    if better_name in  d_wrongCitiesNames:
+                        better_name=d_wrongCitiesNames[better_name] 
+                    if not better_name: continue
+                    else: TRACK_CITIES+=1
+                #set the value to address node  
+                node['address'][s[5:]]=better_name.title()
+            else:
+                #set node if it is nor about adress
+                node[s]=better_name.title()
 
+        for tag in element.iter("nd"):
+            if 'node_refs' not in node: node['node_refs']=[]
+            if 'ref' in tag.attrib: node['node_refs'].append(tag.attrib['ref'])
+        #fill last informations
         for key, val in element.attrib.items():
             if key in NODE:
                 node[key] = val
@@ -336,50 +357,83 @@ def shape_element(element,d_streetName,d_wrongCitiesNames=d_wrongCitiesNames):
             if key == 'lon':
                if 'pos' not in node: node['pos']=[0,0]
                node['pos'][1]=float(val)
+        
         return node
     else:
         return None
 
 
 
+
+        # if elem.tag == "node" or elem.tag == "way":
+        #     for tag in elem.iter("tag"):
+        #         if is_street_name(tag):
+        #             audit_street_type(street_types, tag.attrib['v'])
+        #     elem.clear() # discard the element
+
+
+
 def process_map(file_in, pretty = False):
     '''
-    '''   
+    Create a file with the OSM reshaped to be imported into mongoDB.
+    Return None.
+    '''
+    global TRACK_STREETS, TRACK_CITIES
+    TRACK_STREETS=0
+    TRACK_CITIES=0   
     #create a dictionary with problematic street names
     d_streetName=betterStreetNames(file_in) 
     #Reshape the file and insert it in another file
     #when it is possible
     file_out = "{0}.json".format(file_in)
     #data = []
+    i_num=0
+    set_streets=set()
     with codecs.open(file_out, "w") as fo:
-        for _, element in ET.iterparse(file_in):
+        for _, element in ET.iterparse(file_in ,events=("start",)):
             el = shape_element(element,d_streetName)
             if el:
-                #data.append(el)
+                #track some information about the data
+                i_num+=1
+                if "address" in el:
+                    if "street" in el['address']: 
+                        set_streets.add(el['address']['street'])
+                #print data
                 if pretty:
                     fo.write(json.dumps(el, indent=2)+"\n")
                 else:
                     fo.write(json.dumps(el) + "\n")
-            elem.clear() # discard the element
-    #return data
+            element.clear() # discard the element
+    s_txt="# of documents created: {}\n"
+    s_txt+="# of different street names after corrections: {}\n"
+    s_txt+="# of docs where the street name was fixed: {}\n"
+    s_txt+="# of docs where the city name was fixed: {}\n"
+    print s_txt.format(i_num, len(set_streets),TRACK_STREETS,TRACK_CITIES)
 
 
 
 
 
 def initial_tests(filename):
-	'''
-	...
-	'''
-	#count tags
-	d=count_tags(filename)
-	pprint.pprint(d)
-	#count issues
-	keys = count_tagsIssues(filename)
-	pprint.pprint(keys)
-	#count users
-	users = count_users(filename)
-	print 'Unique Users that contributed to this map: {}'.format(len(users))
+    '''
+    Perform basic check on the data in the OSM file.
+    '''
+    #count tags
+    d=count_tags(filename)
+    print '# of tags:'
+    pprint.pprint(d)
+    print '\n'
+    #count issues
+    keys = count_tagsIssues(filename)
+    print '# of potential problems on the data:'
+    pprint.pprint(keys)
+    print '\n'
+    #count users
+    users = count_users(filename)
+    print '# of unique users that contributed to this map:\n {}'.format(len(users))
+    print '\n'
+
+
 
 
 
