@@ -16,7 +16,9 @@ import pprint
 from collections import defaultdict
 import codecs
 import json
-
+import datetime
+from dbfpy import dbf
+from unidecode import unidecode
 
 
 
@@ -203,99 +205,6 @@ def update_name_and_titles(name, mapping, mapping_title):
 
     return name   
 
-'''
-End of Help Functions
-'''
-
-def count_tags(filename):
-    '''
-    Count the number of each tag presented in the XML file 
-    passed. An Open Street Maps XML file is expected.
-    Return a dictionary with the counting of each tag.
-    '''
-    d={}
-    for event, elem in ET.iterparse(filename):
-        if event == 'end':
-            if elem.tag not in d: d[elem.tag]=1
-            else: d[elem.tag]+=1
-        # discard the element to preserv RAM
-        elem.clear() 
-            
-    return d
-
-
-def count_tagsIssues(filename):
-    '''
-    Iterate through the file count the number of issues mapped.
-    Return a dictionary with the counting of each issue.
-    '''
-    keys = {"lower": 0, "lower_colon": 0, "problemchars": 0, "other": 0}
-    for _, element in ET.iterparse(filename):
-        keys = key_type(element, keys)
-        element.clear() # discard the element
-
-    return keys
-
-
-
-
-
-def count_users(filename):
-    '''
-    Return a set of unique users
-    '''
-    users = set()
-    for _, element in ET.iterparse(filename):
-        users= get_user(element,users)
-        element.clear() # discard the element
-
-    return users
-
-
-def audit(osmfile):
-    '''
-    Return a dictionary with potential wrong or shortened street names in
-    the OSM file.
-
-    The streets in Brazil commonly are named by military and political 
-    authorities names. Besides the first word, that is related to the street type, 
-    it also can present a second word optionally related to the  authority title, 
-    as Colonel or Senator, for instance.
-    '''    
-    osm_file = open(osmfile, "r")
-    street_types = defaultdict(set)
-    for event, elem in ET.iterparse(osm_file, events=("start",)):
-
-        if elem.tag == "node" or elem.tag == "way":
-            for tag in elem.iter("tag"):
-                if is_street_name(tag):
-                    audit_street_type(street_types, tag.attrib['v'])
-            elem.clear() # discard the element
-
-    return street_types
-
-
-  
-def betterStreetNames(filename):
-    '''
-    Return a dictionary with corrected street names.
-    ''' 
-    st_types = audit(filename)
-    d_newName=defaultdict(str)
-    for st_type, ways in st_types.iteritems():
-        for name in ways:
-            better_name = update_name_and_titles(name, mapping, mapping_title)
-            d_newName[name.lower()]=better_name
-            # if better_name:print name, "=>", better_name
-
-    return d_newName
-
-
-
-
-                #     node['address'][s[5:]]=tag.attrib['v']
-                # else:
-                #     node[s]=tag.attrib['v']
 
 
 
@@ -364,13 +273,95 @@ def shape_element(element,d_streetName,d_wrongCitiesNames=d_wrongCitiesNames):
 
 
 
+def audit(osmfile):
+    '''
+    Return a dictionary with potential wrong or shortened street names in
+    the OSM file.
 
-        # if elem.tag == "node" or elem.tag == "way":
-        #     for tag in elem.iter("tag"):
-        #         if is_street_name(tag):
-        #             audit_street_type(street_types, tag.attrib['v'])
-        #     elem.clear() # discard the element
+    The streets in Brazil commonly are named by military and political 
+    authorities names. Besides the first word, that is related to the street type, 
+    it also can present a second word optionally related to the  authority title, 
+    as Colonel or Senator, for instance.
+    '''    
+    osm_file = open(osmfile, "r")
+    street_types = defaultdict(set)
+    for event, elem in ET.iterparse(osm_file, events=("start",)):
 
+        if elem.tag == "node" or elem.tag == "way":
+            for tag in elem.iter("tag"):
+                if is_street_name(tag):
+                    audit_street_type(street_types, tag.attrib['v'])
+            elem.clear() # discard the element
+
+    return street_types
+
+
+'''
+End of Help Functions
+'''
+
+def count_tags(filename):
+    '''
+    Count the number of each tag presented in the XML file 
+    passed. An Open Street Maps XML file is expected.
+    Return a dictionary with the counting of each tag.
+    '''
+    d={}
+    for event, elem in ET.iterparse(filename):
+        if event == 'end':
+            if elem.tag not in d: d[elem.tag]=1
+            else: d[elem.tag]+=1
+        # discard the element to preserv RAM
+        elem.clear() 
+            
+    return d
+
+
+def count_tagsIssues(filename):
+    '''
+    Iterate through the file count the number of issues mapped.
+    Return a dictionary with the counting of each issue.
+    '''
+    keys = {"lower": 0, "lower_colon": 0, "problemchars": 0, "other": 0}
+    for _, element in ET.iterparse(filename):
+        keys = key_type(element, keys)
+        element.clear() # discard the element
+
+    return keys
+
+
+
+
+
+def count_users(filename):
+    '''
+    Return a set of unique users
+    '''
+    users = set()
+    for _, element in ET.iterparse(filename):
+        users= get_user(element,users)
+        element.clear() # discard the element
+
+    return users
+
+
+
+
+
+  
+def betterStreetNames(filename):
+    '''
+    Return a dictionary with corrected street names.
+    ''' 
+    st_types = audit(filename)
+    d_newName=defaultdict(str)
+    for st_type, ways in st_types.iteritems():
+        for name in ways:
+            better_name = update_name_and_titles(name, mapping, mapping_title)
+            d_newName[name.lower()]=better_name
+            # if better_name:print name, "=>", better_name
+
+    return d_newName
 
 
 def process_map(file_in, pretty = False):
@@ -409,6 +400,30 @@ def process_map(file_in, pretty = False):
     s_txt+="# of docs where the street name was fixed: {}\n"
     s_txt+="# of docs where the city name was fixed: {}\n"
     print s_txt.format(i_num, len(set_streets),TRACK_STREETS,TRACK_CITIES)
+
+
+
+
+def count_streets_in_dbf(fr_dbf):
+    '''
+    Count the number unique street names, taking note of the city where it is located.
+    **This function uses the dbf library that can be found here: 
+    link: https://pypi.python.org/pypi/dbfpy/2.3.0
+    It also explores the dataset from Center for metropolitan Studies of Sao Paulo.
+    link: http://www.fflch.usp.br/centrodametropole/en/716
+    '''
+    #create an object to read the file
+    db = dbf.Dbf(fr_dbf)
+    street_set=set()
+    #loop the file adding to a set a string formed by the street and city name.
+    #It makes sure that the same street name in different cities is counted correctely.
+    for rec in db:
+        s_street=unicode(rec['NOME_ACEN'], 'latin1').title()
+        s_city=rec['MUNICIPIO'].title()
+        if (len(s_street)>1) & (len(s_city)):
+            s_key="{} | {}".format(unidecode(s_street).lower(),s_city.lower())
+            street_set.add(s_key)
+    return street_set
 
 
 
