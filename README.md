@@ -3,9 +3,7 @@ P2: Data Wrangle OpenStreetMaps Data
 
 ####DESCRIPTION
 
-A repository to keep all my files related to the final project of the Udacity course "Data Wrangling with MongoDB".
-
-To see the final report, please visit [this](http://nbviewer.ipython.org/github/ucaiado/OpenStreetMaps/blob/master/final_Project_UIRACAIADO_v1.ipynb) ipython notebook.
+Coding resources for the final project of the Udacity course "Data Wrangling with MongoDB". To see the final report, please check out [this](http://nbviewer.ipython.org/github/ucaiado/OpenStreetMaps/blob/master/final_Project_UIRACAIADO_v1.ipynb) ipython notebook.
 
 ####SOURCES:
 
