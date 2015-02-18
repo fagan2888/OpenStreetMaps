@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 '''
 Clean and reshape data from Open Street maps and
-insert explore it in mongo DB.  
+insert it in mongo DB.  
 
 Created on 29/01/2015
 '''
